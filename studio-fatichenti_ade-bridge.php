@@ -3,7 +3,7 @@
  * Plugin Name:       Studio Fatichenti — Avvisi AdE Bridge
  * Plugin URI:        https://github.com/studiofatichenti/plugin-wp_avvisi_ade_bridge
  * Description:       Inoltra i submit del form Contact Form 7 "Avvisi AdE" al Portale Clienti dello studio (VM on-premise) firmando ogni richiesta con HMAC SHA-256. Nessun servizio terzo coinvolto.
- * Version:           1.1.1
+ * Version:           1.1.2
  * Author:            Studio Fatichenti
  * Author URI:        https://studio.fatichenti.com
  * License:           GPL-2.0+
@@ -32,7 +32,7 @@ if (!defined('ABSPATH')) {
 
 const SFA_OPT          = 'sfatichenti_ade_bridge';
 const SFA_LOG_OPT      = 'sfatichenti_ade_bridge_lastlog';
-const SFA_VERSION      = '1.1.1';
+const SFA_VERSION      = '1.1.2';
 const SFA_GH_OWNER     = 'studiofatichenti';
 const SFA_GH_REPO      = 'plugin-wp_avvisi_ade_bridge';
 const SFA_PLUGIN_SLUG  = 'studio-fatichenti_ade-bridge';
@@ -163,6 +163,36 @@ function sfa_settings_page_render()
 }
 
 // ─── Inietta campi anti-bot nel form CF7 (honeypot + _loaded_at) ──
+//
+// Strategia ibrida (CF7 a volte ignora wpcf7_form_elements per via di cache/temi):
+//   1. wpcf7_form_hidden_fields  → inietta _loaded_at (timestamp PHP server-side).
+//      E' il modo "ufficiale" di CF7 per aggiungere campi nascosti, sempre presente
+//      nel form serializzato.
+//   2. wpcf7_form_elements       → inietta honeypot field (richiede HTML libero).
+//      Se per qualche motivo il filter non viene applicato (cache di pagina,
+//      tema custom), l'honeypot non c'e' ma il flusso principale continua a
+//      funzionare grazie a (1) + HMAC + rate limit + Origin check.
+
+add_filter('wpcf7_form_hidden_fields', function ($fields) {
+    $opts = sfa_get_options();
+    if (!$opts['enabled']) {
+        return $fields;
+    }
+    // CF7 chiama questo filter passando l'ID del form corrente nelle versioni
+    // recenti, ma per retrocompatibilita' usiamo WPCF7_ContactForm::get_current().
+    if ($opts['cf7_form_id']) {
+        $current = class_exists('WPCF7_ContactForm') ? WPCF7_ContactForm::get_current() : null;
+        if ($current && intval($current->id()) !== intval($opts['cf7_form_id'])) {
+            return $fields;
+        }
+    }
+    // Timestamp server-side (epoch ms): se la pagina e' cachata, il valore puo'
+    // essere fino a 1h vecchio (tolleranza nel Portale). Il JS injectato dal
+    // filter wpcf7_form_elements lo aggiorna a Date.now() lato browser quando
+    // possibile.
+    $fields['_loaded_at'] = (string) ((int) round(microtime(true) * 1000));
+    return $fields;
+}, 10, 1);
 
 add_filter('wpcf7_form_elements', function ($form) {
     $opts = sfa_get_options();
@@ -172,20 +202,18 @@ add_filter('wpcf7_form_elements', function ($form) {
     $current = function_exists('wpcf7_get_current_contact_form')
         ? wpcf7_get_current_contact_form()
         : (class_exists('WPCF7_ContactForm') ? WPCF7_ContactForm::get_current() : null);
-    if (!$current) {
-        return $form;
-    }
-    if ($opts['cf7_form_id'] && intval($current->id()) !== intval($opts['cf7_form_id'])) {
+    if ($current && $opts['cf7_form_id'] && intval($current->id()) !== intval($opts['cf7_form_id'])) {
         return $form;
     }
 
     $rnd_id = 'sfa_la_' . wp_rand(1000, 9999);
+    // Honeypot field (invisibile, riempito solo dai bot che leggono i name).
+    // Se il browser ha JS attivo, aggiorniamo anche _loaded_at a Date.now().
     $hidden = ''
         . '<div aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;visibility:hidden;height:0;overflow:hidden;">'
         . '  <label>Lascia vuoto: <input type="text" name="website" tabindex="-1" autocomplete="off"></label>'
         . '</div>'
-        . '<input type="hidden" name="_loaded_at" id="' . esc_attr($rnd_id) . '" value="0">'
-        . '<script>(function(){var e=document.getElementById("' . esc_js($rnd_id) . '");if(e){e.value=Date.now();}})();</script>';
+        . '<script>(function(){var f=document.querySelector(\'input[name="_loaded_at"]\');if(f){f.value=Date.now();}})();</script>';
 
     return $hidden . $form;
 }, 10, 1);
