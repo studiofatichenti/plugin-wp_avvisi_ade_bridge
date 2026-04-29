@@ -3,7 +3,7 @@
  * Plugin Name:       Studio Fatichenti — Avvisi AdE Bridge
  * Plugin URI:        https://github.com/studiofatichenti/plugin-wp_avvisi_ade_bridge
  * Description:       Inoltra i submit del form Contact Form 7 "Avvisi AdE" al Portale Clienti dello studio (VM on-premise) firmando ogni richiesta con HMAC SHA-256. Nessun servizio terzo coinvolto.
- * Version:           1.1.4
+ * Version:           1.1.5
  * Author:            Studio Fatichenti
  * Author URI:        https://studio.fatichenti.com
  * License:           GPL-2.0+
@@ -32,7 +32,7 @@ if (!defined('ABSPATH')) {
 
 const SFA_OPT          = 'sfatichenti_ade_bridge';
 const SFA_LOG_OPT      = 'sfatichenti_ade_bridge_lastlog';
-const SFA_VERSION      = '1.1.4';
+const SFA_VERSION      = '1.1.5';
 const SFA_GH_OWNER     = 'studiofatichenti';
 const SFA_GH_REPO      = 'plugin-wp_avvisi_ade_bridge';
 const SFA_PLUGIN_SLUG  = 'studio-fatichenti_ade-bridge';
@@ -255,9 +255,14 @@ add_action('wpcf7_before_send_mail', function ($contact_form, &$abort, $submissi
         $data_ric_it = $m[3] . '/' . $m[2] . '/' . $m[1];
     }
 
+    // Codice fiscale: se nel form CF7 esiste un campo "codice_fiscale"
+    // (aggiunto al modulo per consentire il match automatico col cliente CRM),
+    // lo leggiamo. Altrimenti resta vuoto e il record sara' "orfano" nel CRM.
+    $cf_form = strtoupper(sfa_field($data, 'codice_fiscale'));
+
     $payload = [
         'nominativo'             => $nominativo,
-        'codice_fiscale'         => '',  // il modulo non lo chiede
+        'codice_fiscale'         => $cf_form,
         'email'                  => strtolower(sfa_field($data, 'your-email')),
         'telefono'               => sfa_field($data, 'Telefono'),
         'oggetto'                => sfa_field($data, 'your-subject'),
