@@ -3,7 +3,7 @@
  * Plugin Name:       Studio Fatichenti — Avvisi AdE Bridge
  * Plugin URI:        https://github.com/studiofatichenti/plugin-wp_avvisi_ade_bridge
  * Description:       Inoltra i submit del form Contact Form 7 "Avvisi AdE" al Portale Clienti dello studio (VM on-premise) firmando ogni richiesta con HMAC SHA-256. Nessun servizio terzo coinvolto.
- * Version:           1.1.2
+ * Version:           1.1.3
  * Author:            Studio Fatichenti
  * Author URI:        https://studio.fatichenti.com
  * License:           GPL-2.0+
@@ -32,11 +32,11 @@ if (!defined('ABSPATH')) {
 
 const SFA_OPT          = 'sfatichenti_ade_bridge';
 const SFA_LOG_OPT      = 'sfatichenti_ade_bridge_lastlog';
-const SFA_VERSION      = '1.1.2';
+const SFA_VERSION      = '1.1.3';
 const SFA_GH_OWNER     = 'studiofatichenti';
 const SFA_GH_REPO      = 'plugin-wp_avvisi_ade_bridge';
 const SFA_PLUGIN_SLUG  = 'studio-fatichenti_ade-bridge';
-const SFA_UPDATE_TTL   = 12 * HOUR_IN_SECONDS;  // intervallo controllo nuove release
+const SFA_UPDATE_TTL   = HOUR_IN_SECONDS;  // intervallo controllo nuove release (1h)
 
 // ─── Settings page ───────────────────────────────────────────────
 
@@ -539,9 +539,27 @@ add_filter('upgrader_post_install', function ($response, $hook_extra, $result) {
     return $response;
 }, 10, 3);
 
-// Forza un check immediato al click su "Controlla aggiornamenti" nella pagina Plugin.
+// Forza un check immediato dopo un upgrade del plugin.
 add_action('upgrader_process_complete', function ($upgrader, $hook_extra) {
     if (!empty($hook_extra['plugins']) && in_array(sfa_plugin_basename(), (array)$hook_extra['plugins'], true)) {
         delete_site_transient('sfa_gh_latest_release');
     }
 }, 10, 2);
+
+// Quando l'admin clicca "Controlla di nuovo" su WordPress (Bacheca → Aggiornamenti
+// oppure pagina Plugin), WP aggiunge ?force-check=1 all'URL: ne approfittiamo per
+// svuotare la nostra cache GitHub e ricontrollare subito.
+add_action('admin_init', function () {
+    if (isset($_GET['force-check']) && current_user_can('update_plugins')) {
+        delete_site_transient('sfa_gh_latest_release');
+    }
+});
+
+// Inoltre, ogni volta che WordPress inizia il proprio ciclo di check degli
+// update plugin (cron o richiesta manuale), elimino la cache se piu' vecchia
+// di SFA_UPDATE_TTL — cosi' WP vede sempre il dato fresco entro l'intervallo.
+add_action('wp_update_plugins', function () {
+    $cached = get_site_transient('sfa_gh_latest_release');
+    // Se il transient e' false (gia' scaduto) WP fara' una nuova chiamata
+    // automaticamente. Non serve toccare nulla qui.
+});
