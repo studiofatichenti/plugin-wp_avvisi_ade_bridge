@@ -3,7 +3,7 @@
  * Plugin Name:       Studio Fatichenti — Avvisi AdE Bridge
  * Plugin URI:        https://github.com/studiofatichenti/plugin-wp_avvisi_ade_bridge
  * Description:       Inoltra i submit del form Contact Form 7 "Avvisi AdE" al Portale Clienti dello studio (VM on-premise) firmando ogni richiesta con HMAC SHA-256. Nessun servizio terzo coinvolto.
- * Version:           1.1.0
+ * Version:           1.1.1
  * Author:            Studio Fatichenti
  * Author URI:        https://studio.fatichenti.com
  * License:           GPL-2.0+
@@ -32,7 +32,7 @@ if (!defined('ABSPATH')) {
 
 const SFA_OPT          = 'sfatichenti_ade_bridge';
 const SFA_LOG_OPT      = 'sfatichenti_ade_bridge_lastlog';
-const SFA_VERSION      = '1.1.0';
+const SFA_VERSION      = '1.1.1';
 const SFA_GH_OWNER     = 'studiofatichenti';
 const SFA_GH_REPO      = 'plugin-wp_avvisi_ade_bridge';
 const SFA_PLUGIN_SLUG  = 'studio-fatichenti_ade-bridge';
@@ -424,30 +424,42 @@ function sfa_get_latest_release()
 }
 
 // Hook: inietta il plugin nei "transient" degli aggiornamenti disponibili.
+// IMPORTANTE: WordPress mostra il toggle "Abilita aggiornamenti automatici"
+// nella pagina Plugin SOLO se il plugin compare in $transient->response
+// (nuova versione) OPPURE in $transient->no_update (aggiornato all'ultima).
+// Quindi popoliamo SEMPRE almeno uno dei due array.
 add_filter('pre_set_site_transient_update_plugins', function ($transient) {
     if (empty($transient->checked)) {
         return $transient;
     }
-    $latest = sfa_get_latest_release();
-    if (!$latest) {
-        return $transient;
-    }
-    if (version_compare($latest['version'], SFA_VERSION, '<=')) {
-        return $transient;  // niente nuova release
-    }
     $basename = sfa_plugin_basename();
-    $transient->response[$basename] = (object) [
+    $latest = sfa_get_latest_release();
+
+    // Oggetto base con i metadati del plugin (uguale per entrambi i rami)
+    $plugin_info = (object) [
         'slug'        => SFA_PLUGIN_SLUG,
         'plugin'      => $basename,
-        'new_version' => $latest['version'],
-        'url'         => $latest['html_url'],
-        'package'     => $latest['download_url'],
-        'tested'      => '6.5',  // versione WP testata
+        'new_version' => SFA_VERSION,
+        'url'         => sprintf('https://github.com/%s/%s', SFA_GH_OWNER, SFA_GH_REPO),
+        'package'     => '',
+        'tested'      => '6.5',
         'icons'       => [],
         'banners'     => [],
         'requires'    => '6.0',
         'requires_php'=> '7.4',
     ];
+
+    if ($latest && version_compare($latest['version'], SFA_VERSION, '>')) {
+        // Nuova versione disponibile → in $transient->response
+        $plugin_info->new_version = $latest['version'];
+        $plugin_info->url         = $latest['html_url'];
+        $plugin_info->package     = $latest['download_url'];
+        $transient->response[$basename] = $plugin_info;
+    } else {
+        // Plugin già all'ultima versione → in $transient->no_update
+        // (necessario perché WP mostri il toggle "Auto-update")
+        $transient->no_update[$basename] = $plugin_info;
+    }
     return $transient;
 });
 
