@@ -3,7 +3,7 @@
  * Plugin Name:       Studio Fatichenti — Avvisi AdE Bridge
  * Plugin URI:        https://github.com/studiofatichenti/plugin-wp_avvisi_ade_bridge
  * Description:       Inoltra i submit del form Contact Form 7 "Avvisi AdE" al Portale Clienti dello studio (VM on-premise) firmando ogni richiesta con HMAC SHA-256. Nessun servizio terzo coinvolto.
- * Version:           1.1.3
+ * Version:           1.1.4
  * Author:            Studio Fatichenti
  * Author URI:        https://studio.fatichenti.com
  * License:           GPL-2.0+
@@ -32,7 +32,7 @@ if (!defined('ABSPATH')) {
 
 const SFA_OPT          = 'sfatichenti_ade_bridge';
 const SFA_LOG_OPT      = 'sfatichenti_ade_bridge_lastlog';
-const SFA_VERSION      = '1.1.3';
+const SFA_VERSION      = '1.1.4';
 const SFA_GH_OWNER     = 'studiofatichenti';
 const SFA_GH_REPO      = 'plugin-wp_avvisi_ade_bridge';
 const SFA_PLUGIN_SLUG  = 'studio-fatichenti_ade-bridge';
@@ -178,18 +178,12 @@ add_filter('wpcf7_form_hidden_fields', function ($fields) {
     if (!$opts['enabled']) {
         return $fields;
     }
-    // CF7 chiama questo filter passando l'ID del form corrente nelle versioni
-    // recenti, ma per retrocompatibilita' usiamo WPCF7_ContactForm::get_current().
-    if ($opts['cf7_form_id']) {
-        $current = class_exists('WPCF7_ContactForm') ? WPCF7_ContactForm::get_current() : null;
-        if ($current && intval($current->id()) !== intval($opts['cf7_form_id'])) {
-            return $fields;
-        }
-    }
-    // Timestamp server-side (epoch ms): se la pagina e' cachata, il valore puo'
-    // essere fino a 1h vecchio (tolleranza nel Portale). Il JS injectato dal
-    // filter wpcf7_form_elements lo aggiorna a Date.now() lato browser quando
-    // possibile.
+    // NB: NON facciamo il check su cf7_form_id qui, perché WPCF7_ContactForm::get_current()
+    // a volte ritorna null nel contesto di questo filter (es. con cache di pagina o
+    // con temi che renderizzano il form via shortcode in modo asincrono).
+    // Iniettiamo _loaded_at su TUTTI i form CF7: il check del form ID viene fatto
+    // dal handler wpcf7_before_send_mail (che invia al Portale solo se il form e'
+    // quello configurato). Il campo _loaded_at extra negli altri form e' innocuo.
     $fields['_loaded_at'] = (string) ((int) round(microtime(true) * 1000));
     return $fields;
 }, 10, 1);
